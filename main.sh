@@ -139,6 +139,42 @@ setup_android_sdk() {
     export PATH="$CMDLINE_TOOLS_DIR/latest/bin:$PATH"
 }
 
+# Function to install Chocolatey on Windows
+install_chocolatey() {
+    # Check if Chocolatey is already installed
+    if (Get-Command choco -ErrorAction SilentlyContinue) {
+        echo -e "${GREEN}Chocolatey is already installed.${RESET}"
+        return
+    }
+
+    echo -e "${YELLOW}Installing Chocolatey...${RESET}"
+    
+    # Check if running as administrator
+    $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    
+    if (-not $isAdmin) {
+        echo -e "${RED}Error: Chocolatey installation requires administrator privileges.${RESET}"
+        echo -e "${YELLOW}Please run PowerShell as an administrator and retry.${RESET}"
+        exit 1
+    }
+
+    # Install Chocolatey
+    Set-ExecutionPolicy Bypass -Scope Process -Force
+    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+    
+    try {
+        Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))
+        
+        # Refresh environment variables
+        refreshenv
+        
+        echo -e "${GREEN}Chocolatey installed successfully!${RESET}"
+    } catch {
+        echo -e "${RED}Failed to install Chocolatey. Please check your internet connection and try again.${RESET}"
+        exit 1
+    }
+}
+
 # Function to install Android components
 install_android_components() {
     case "$OS_TYPE" in
@@ -243,7 +279,10 @@ main() {
                           
                           By Cody4code (@fekerineamar)
     ${RESET}"
-
+    # For Windows, first check and install Chocolatey
+    if [[ "$OS_TYPE" == "windows" ]]; then
+        install_chocolatey
+    fi
     # Install dependencies
     install_dependencies
 
