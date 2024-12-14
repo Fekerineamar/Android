@@ -208,16 +208,20 @@ create_linux_shortcut() {
 
 # Windows shortcut
 create_windows_shortcut() {
+  # Determine the directory of the script
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  
   powershell -Command "
   \$WScript = New-Object -ComObject WScript.Shell
   \$Shortcut = \$WScript.CreateShortcut('$HOME\\Desktop\\Samsung_S23.lnk')
-  \$Shortcut.TargetPath = 'C:\\path\\to\\emulator.exe'
+  \$Shortcut.TargetPath = '${SCRIPT_DIR//\//\\}\\emulator.exe'
   \$Shortcut.Arguments = '-avd Samsung_S23'
-  \$Shortcut.IconLocation = 'C:\\path\\to\\icon.ico'
+  \$Shortcut.IconLocation = '${SCRIPT_DIR//\//\\}\\icon.png'
   \$Shortcut.Save()
   "
   echo -e "${GREEN}Shortcut created on Desktop.${RESET}"
 }
+
 
 # Start script
 clear_screen
