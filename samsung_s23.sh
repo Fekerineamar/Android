@@ -10,11 +10,10 @@ BOLD='\033[1m'
 
 # Function to clear screen based on OS
 clear_screen() {
-  # Check the OS and clear the terminal
   if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-    clear  # For Linux (Bash)
+    clear
   elif [[ "$OSTYPE" == "cygwin" || "$OSTYPE" == "msys" ]]; then
-    cls  # For Windows (PowerShell or Git Bash)
+    cls
   fi
 }
 
@@ -29,25 +28,63 @@ detect_os_and_run() {
     | |/ / / /  / /_/ /_/ / /_/ / /  / /_/ / / /_/ /  
     |___/_/_/   \__/\__,_/_____/_/   \____/_/\__,_/   
                           
-                          By Cody4code (@fekerineamar) 
-    ${RESET}"
+                          By Cody4code (@fekerineamar)     ${RESET}"
+
+    # Ensure dependencies are installed
+   # List of required packages
+    packages=(wget unzip curl)
     
-    if ! command -v wget &> /dev/null; then
-        echo -e "${YELLOW}wget is not installed. Installing wget...${RESET}"
-        sudo apt-get update && sudo apt-get install -y wget
+    # Detect the package manager and install the packages
+    if command -v apt-get &> /dev/null; then
+      # For Debian-based systems (Ubuntu, Debian, etc.)
+      sudo apt-get update
+      for pkg in "${packages[@]}"; do
+        if ! command -v "$pkg" &> /dev/null; then
+          echo -e "${YELLOW}$pkg is not installed. Installing...${RESET}"
+          sudo apt-get install -y "$pkg"
+        fi
+      done
+    
+    elif command -v dnf &> /dev/null; then
+      # For Fedora-based systems (Fedora, CentOS 8+, RHEL 8+)
+      for pkg in "${packages[@]}"; do
+        if ! command -v "$pkg" &> /dev/null; then
+          echo -e "${YELLOW}$pkg is not installed. Installing...${RESET}"
+          sudo dnf install -y "$pkg"
+        fi
+      done
+    
+    elif command -v yum &> /dev/null; then
+      # For older CentOS/RHEL (7 and below)
+      for pkg in "${packages[@]}"; do
+        if ! command -v "$pkg" &> /dev/null; then
+          echo -e "${YELLOW}$pkg is not installed. Installing...${RESET}"
+          sudo yum install -y "$pkg"
+        fi
+      done
+    
+    elif command -v pacman &> /dev/null; then
+      # For Arch Linux and Manjaro
+      for pkg in "${packages[@]}"; do
+        if ! command -v "$pkg" &> /dev/null; then
+          echo -e "${YELLOW}$pkg is not installed. Installing...${RESET}"
+          sudo pacman -S --noconfirm "$pkg"
+        fi
+      done
+    
+    elif command -v brew &> /dev/null; then
+      # For macOS with Homebrew
+      for pkg in "${packages[@]}"; do
+        if ! command -v "$pkg" &> /dev/null; then
+          echo -e "${YELLOW}$pkg is not installed. Installing...${RESET}"
+          brew install "$pkg"
+        fi
+      done
+    
+    else
+      echo -e "${RED}Error: Unsupported package manager or OS.${RESET}"
     fi
 
-    # Check if unzip is installed
-    if ! command -v unzip &> /dev/null; then
-        echo -e "${YELLOW}unzip is not installed. Installing unzip...${RESET}"
-        sudo apt-get install -y unzip
-    fi
-
-    # Check if curl is installed
-    if ! command -v curl &> /dev/null; then
-        echo -e "${YELLOW}curl is not installed. Installing curl...${RESET}"
-        sudo apt-get install -y curl
-    fi
 
     # Variables
     CMDLINE_TOOLS_URL="https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
@@ -58,148 +95,130 @@ detect_os_and_run() {
     SYSTEM_IMAGE="system-images;android-33;google_apis;x86_64"
     PLAY_STORE_IMAGE="system-images;android-33;google_apis_playstore;x86_64"
 
-    # Step 1: Check if Android SDK already exists
-    if [ -d "$CMDLINE_TOOLS_DIR/latest" ]; then
-      echo -e "${GREEN}Android SDK Command Line Tools already installed.${RESET}"
-    else
-      # Download and Extract the tools
-      echo -e "${YELLOW}Downloading Command Line Tools...${RESET}"
+    # Download SDK if not already present
+     # Download SDK if not already present
+    if [ ! -d "$CMDLINE_TOOLS_DIR/latest" ]; then
       wget -q "$CMDLINE_TOOLS_URL" -O "$TEMP_ZIP"
-      echo -e "${YELLOW}Extracting Command Line Tools...${RESET}"
       mkdir -p "$CMDLINE_TOOLS_DIR"
       unzip -q "$TEMP_ZIP" -d "$CMDLINE_TOOLS_DIR/"
       mv "$CMDLINE_TOOLS_DIR/cmdline-tools" "$CMDLINE_TOOLS_DIR/latest"
       rm "$TEMP_ZIP"
     fi
 
-    # Step 2: Update PATH
+
     export PATH="$CMDLINE_TOOLS_DIR/latest/bin:$PATH"
 
-    # Step 3: Install SDK Components
-    echo -e "${MAGENTA}Installing required SDK components...${RESET}"
+    # Install required components
     yes | sdkmanager --licenses
     sdkmanager "platform-tools" "platforms;android-33"
 
-    # Step 4: Ask User if Play Store Image is Needed
-    read -p "$(echo -e ${CYAN}Do you want to include a Play Store image? (y/n): ${RESET})" INCLUDE_PLAY_STORE
+    # Ask if Play Store image is needed
+    read -p "$(echo -e ${CYAN}Include Play Store image? (y/n): ${RESET})" INCLUDE_PLAY_STORE
     if [[ "$INCLUDE_PLAY_STORE" == "y" ]]; then
       SYSTEM_IMAGE=$PLAY_STORE_IMAGE
     fi
-
-    # Install the selected system image
     sdkmanager "$SYSTEM_IMAGE"
 
-    # Step 5: Check if AVD already exists
-    if avdmanager list avd | grep -q "$AVD_NAME"; then
-      echo -e "${GREEN}AVD '$AVD_NAME' already exists.${RESET}"
-    else
-      # Create AVD
-      echo -e "${YELLOW}Creating AVD...${RESET}"
+    # Create AVD if not exists
+    if ! avdmanager list avd | grep -q "$AVD_NAME"; then
       echo "no" | avdmanager create avd -n "$AVD_NAME" -k "$SYSTEM_IMAGE" --device "pixel_3"
     fi
 
-    # Step 6: Launch the Emulator
-    echo -e "${CYAN}Launching Emulator...${RESET}"
+    create_linux_shortcut
     emulator -avd "$AVD_NAME" &
 
     echo -e "${GREEN}Setup Complete! Emulator is running.${RESET}"
 
   elif [[ "$OSTYPE" == "cygwin" || "$OSTYPE" == "msys" ]]; then
     # Windows-specific commands
-    Write-Host "$CYAN$BOLD
-    _    ___      __        ____             _     __
+    echo -e "${CYAN}
+
+     _    ___      __        ____             _     __
     | |  / (_)____/ /___  __/ __ \_________  (_)___/ /
     | | / / / ___/ __/ / / / / / ___/ __ \/ / __  / 
     | |/ / / /  / /_/ /_/ / /_/ / /  / /_/ / / /_/ /  
     |___/_/_/   \__/\__,_/_____/_/   \____/_/\__,_/   
-
+                          
                           By Cody4code (@fekerineamar) 
-    $RESET"
- 
+    ${RESET}"
 
-    # Check if wget is installed
-    if (-not (Get-Command wget -ErrorAction SilentlyContinue)) {
-        Write-Host "$YELLOW wget is not installed. Installing wget...$RESET"
-        choco install wget -y
-    }
+    # Check and install dependencies
+    for cmd in wget unzip curl; do
+      if ! command -v "$cmd" &> /dev/null; then
+        echo -e "${YELLOW}$cmd is missing. Installing via Chocolatey...${RESET}"
+        choco install "$cmd" -y
+      fi
+    done
 
-    # Check if unzip is installed
-    if (-not (Get-Command unzip -ErrorAction SilentlyContinue)) {
-        Write-Host "$YELLOW unzip is not installed. Installing unzip...$RESET"
-        choco install unzip -y
-    }
+    CMDLINE_TOOLS_URL="https://dl.google.com/android/repository/commandlinetools-win-11076708_latest.zip"
+    SDK_ROOT="$HOME\\Android\\Sdk"
+    CMDLINE_TOOLS_DIR="$SDK_ROOT\\cmdline-tools"
+    TEMP_ZIP="commandlinetools.zip"
+    AVD_NAME="Samsung_S23"
+    SYSTEM_IMAGE="system-images;android-33;google_apis;x86_64"
+    PLAY_STORE_IMAGE="system-images;android-33;google_apis_playstore;x86_64"
 
-    # Check if curl is installed
-    if (-not (Get-Command curl -ErrorAction SilentlyContinue)) {
-        Write-Host "$YELLOW curl is not installed. Installing curl...$RESET"
-        choco install curl -y
-    }
+    if [ ! -d "$CMDLINE_TOOLS_DIR/latest" ]; then
+      Invoke-WebRequest -Uri $CMDLINE_TOOLS_URL -OutFile $TEMP_ZIP
+      mkdir -p "$CMDLINE_TOOLS_DIR"
+      Expand-Archive -Path $TEMP_ZIP -DestinationPath $CMDLINE_TOOLS_DIR
+      Rename-Item "$CMDLINE_TOOLS_DIR/cmdline-tools" "$CMDLINE_TOOLS_DIR/latest"
+      Remove-Item $TEMP_ZIP
+    fi
 
-    # Variables
-    $CMDLINE_TOOLS_URL = "https://dl.google.com/android/repository/commandlinetools-win-11076708_latest.zip"
-    $SDK_ROOT = [System.Environment]::GetFolderPath('MyDocuments') + "\Android\Sdk"
-    $CMDLINE_TOOLS_DIR = "$SDK_ROOT\cmdline-tools"
-    $TEMP_ZIP = "commandlinetools.zip"
-    $AVD_NAME = "Samsung_S23"
-    $SYSTEM_IMAGE = "system-images;android-33;google_apis;x86_64"
-    $PLAY_STORE_IMAGE = "system-images;android-33;google_apis_playstore;x86_64"
+    Start-Process -Wait -NoNewWindow -FilePath "sdkmanager" -ArgumentList "--licenses"
+    Start-Process -Wait -NoNewWindow -FilePath "sdkmanager" -ArgumentList "platform-tools", "platforms;android-33"
 
-    # Step 1: Check if Android SDK already exists
-    if (Test-Path "$CMDLINE_TOOLS_DIR\latest") {
-        Write-Host "$GREEN Android SDK Command Line Tools already installed.$RESET"
-    } else {
-        # Download and Extract the tools
-        Write-Host "$YELLOW Downloading Command Line Tools...$RESET"
-        Invoke-WebRequest -Uri $CMDLINE_TOOLS_URL -OutFile $TEMP_ZIP
-        Write-Host "$YELLOW Extracting Command Line Tools...$RESET"
-        New-Item -ItemType Directory -Force -Path $CMDLINE_TOOLS_DIR
-        Expand-Archive -Path $TEMP_ZIP -DestinationPath $CMDLINE_TOOLS_DIR
-        Rename-Item "$CMDLINE_TOOLS_DIR\cmdline-tools" "$CMDLINE_TOOLS_DIR\latest"
-        Remove-Item $TEMP_ZIP
-    }
+    read -p "$(echo -e ${CYAN}Include Play Store image? (y/n): ${RESET})" INCLUDE_PLAY_STORE
+    if [[ "$INCLUDE_PLAY_STORE" == "y" ]]; then
+      SYSTEM_IMAGE=$PLAY_STORE_IMAGE
+    fi
+    Start-Process -Wait -NoNewWindow -FilePath "sdkmanager" -ArgumentList "$SYSTEM_IMAGE"
 
-    # Step 2: Update PATH
-    $env:Path += ";$CMDLINE_TOOLS_DIR\latest\bin"
+    create_windows_shortcut
+    Start-Process -Wait -NoNewWindow -FilePath "emulator" -ArgumentList "-avd $AVD_NAME"
 
-    # Step 3: Install SDK Components
-    Write-Host "$MAGENTA Installing required SDK components...$RESET"
-    Start-Process -NoNewWindow -Wait -FilePath "sdkmanager" -ArgumentList "--licenses"
-    Start-Process -NoNewWindow -Wait -FilePath "sdkmanager" -ArgumentList "platform-tools", "platforms;android-33"
-
-    # Step 4: Ask User if Play Store Image is Needed
-    $INCLUDE_PLAY_STORE = Read-Host "$CYAN Do you want to include a Play Store image? (y/n): $RESET"
-    if ($INCLUDE_PLAY_STORE -eq "y") {
-        $SYSTEM_IMAGE = $PLAY_STORE_IMAGE
-    }
-
-    # Install the selected system image
-    Write-Host "$BLUE Installing selected system image: $SYSTEM_IMAGE...$RESET"
-    Start-Process -NoNewWindow -Wait -FilePath "sdkmanager" -ArgumentList $SYSTEM_IMAGE
-
-    # Step 5: Check if AVD already exists
-    $AVD_EXISTS = & "avdmanager" list avd | Select-String -Pattern $AVD_NAME
-    if ($AVD_EXISTS) {
-        Write-Host "$GREEN AVD '$AVD_NAME' already exists.$RESET"
-    } else {
-        # Create AVD
-        Write-Host "$YELLOW Creating AVD...$RESET"
-        echo "no" | & "avdmanager" create avd -n $AVD_NAME -k $SYSTEM_IMAGE --device "pixel_3"
-    }
-
-    # Step 6: Launch the Emulator
-    Write-Host "$CYAN Launching Emulator...$RESET"
-    Start-Process -NoNewWindow -Wait -FilePath "emulator" -ArgumentList "-avd $AVD_NAME"
-
-    Write-Host "$GREEN Setup Complete! Emulator is running.$RESET"
-
-
+    echo -e "${GREEN}Setup Complete! Emulator is running.${RESET}"
   else
-    echo "Unsupported OS type: $OSTYPE"
+    echo "Unsupported OS: $OSTYPE"
   fi
 }
 
-# Clear the screen before starting the setup
-clear_screen
+# Linux shortcut
+create_linux_shortcut() {
+  DESKTOP_FILE="$HOME/Desktop/Samsung_S23.desktop"
+  ICON_PATH="$(pwd)/icon.png"
 
-# Detect OS and run corresponding code
+  if [ ! -f "$ICON_PATH" ]; then
+    echo -e "${YELLOW}Icon file not found. Using default icon.${RESET}"
+    ICON_PATH="/usr/share/icons/default.png"  # Fallback icon
+  fi
+
+  echo "[Desktop Entry]
+  Name=Android Emulator
+  Exec=emulator -avd Samsung_S23
+  Icon=$ICON_PATH
+  Terminal=false
+  Type=Application
+  Categories=Development;
+  " > "$DESKTOP_FILE"
+  chmod +x "$DESKTOP_FILE"
+  echo -e "${GREEN}Shortcut created on Desktop.${RESET}"
+}
+
+# Windows shortcut
+create_windows_shortcut() {
+  powershell -Command "
+  \$WScript = New-Object -ComObject WScript.Shell
+  \$Shortcut = \$WScript.CreateShortcut('$HOME\\Desktop\\Samsung_S23.lnk')
+  \$Shortcut.TargetPath = 'C:\\path\\to\\emulator.exe'
+  \$Shortcut.Arguments = '-avd Samsung_S23'
+  \$Shortcut.IconLocation = 'C:\\path\\to\\icon.ico'
+  \$Shortcut.Save()
+  "
+  echo -e "${GREEN}Shortcut created on Desktop.${RESET}"
+}
+
+# Start script
+clear_screen
 detect_os_and_run
