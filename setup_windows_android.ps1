@@ -1,259 +1,244 @@
-# Clear the screen for a clean start
-Clear-Host
+# Comprehensive Android SDK Setup Executable
+# Requires PowerShell 5.1+ and .NET Framework 4.7.2+
 
-# Colors for output
-$Cyan = "`e[36m"
-$Bold = "`e[1m"
-$Reset = "`e[0m"
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+Add-Type -AssemblyName PresentationFramework
 
-# Function to check if running as administrator
-function Test-Admin {
-    $currentIdentity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
-    $principal = New-Object System.Security.Principal.WindowsPrincipal($currentIdentity)
-    return $principal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)
+# Logging and Configuration
+$global:LogFile = "$env:TEMP\AndroidSDKSetup.log"
+$global:SDK_ROOT = "$env:USERPROFILE\Android\Sdk"
+$global:CMDLINE_TOOLS_URL = "https://dl.google.com/android/repository/commandlinetools-win-11076708_latest.zip"
+
+# Helper Functions
+function Write-DetailedLog {
+    param(
+        [string]$Message,
+        [string]$Level = "INFO"
+    )
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    $logEntry = "[$Level] $timestamp - $Message"
+    Add-Content -Path $global:LogFile -Value $logEntry
+    Write-Host $logEntry
 }
 
-# Enhanced Execution Policy Handler with Elevation
-function Set-ExecutionPolicyWithElevation {
-    try {
-        # Check current execution policy
-        $currentPolicy = Get-ExecutionPolicy -Scope CurrentUser
+function Show-AdvancedProgressForm {
+    $form = New-Object System.Windows.Forms.Form
+    $form.Text = "Android SDK Setup Wizard"
+    $form.Size = New-Object System.Drawing.Size(500, 350)
+    $form.StartPosition = "CenterScreen"
+    $form.BackColor = [System.Drawing.Color]::White
 
-        # If policy is not RemoteSigned, attempt to change it
-        if ($currentPolicy -ne 'RemoteSigned') {
-            # Create a temporary script to change execution policy
-            $tempScript = "$env:TEMP\set_execution_policy.ps1"
-            
-            @"
-# Script to set execution policy
-Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
-"@ | Out-File $tempScript -Encoding UTF8
+    # Logo Panel
+    $logoPanel = New-Object System.Windows.Forms.Panel
+    $logoPanel.Location = New-Object System.Drawing.Point(0, 0)
+    $logoPanel.Size = New-Object System.Drawing.Size(500, 80)
+    $logoPanel.BackColor = [System.Drawing.Color]::FromArgb(36, 41, 46)
+    $form.Controls.Add($logoPanel)
 
-            # Relaunch with elevated privileges to change execution policy
-            $psi = New-Object System.Diagnostics.ProcessStartInfo
-            $psi.FileName = "powershell.exe"
-            $psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$tempScript`""
-            $psi.Verb = "runas"
-            $psi.WorkingDirectory = $env:TEMP
+    # Logo Text
+    $logoLabel = New-Object System.Windows.Forms.Label
+    $logoLabel.Text = "Android SDK Setup"
+    $logoLabel.Font = New-Object System.Drawing.Font("Segoe UI", 16, [System.Drawing.FontStyle]::Bold)
+    $logoLabel.ForeColor = [System.Drawing.Color]::White
+    $logoLabel.Location = New-Object System.Drawing.Point(20, 25)
+    $logoLabel.Size = New-Object System.Drawing.Size(300, 40)
+    $logoPanel.Controls.Add($logoLabel)
 
-            $process = [System.Diagnostics.Process]::Start($psi)
-            $process.WaitForExit()
+    # Status Label
+    $statusLabel = New-Object System.Windows.Forms.Label
+    $statusLabel.Location = New-Object System.Drawing.Point(20, 100)
+    $statusLabel.Size = New-Object System.Drawing.Size(460, 30)
+    $statusLabel.Font = New-Object System.Drawing.Font("Segoe UI", 10)
+    $statusLabel.Text = "Preparing Android SDK Installation..."
+    $form.Controls.Add($statusLabel)
 
-            # Verify the change
-            $newPolicy = Get-ExecutionPolicy -Scope CurrentUser
-            if ($newPolicy -eq 'RemoteSigned') {
-                Write-Host "Execution policy successfully set to RemoteSigned." -ForegroundColor Green
-                return $true
-            } else {
-                Write-Host "Failed to set execution policy." -ForegroundColor Red
-                return $false
+    # Progress Bar
+    $progressBar = New-Object System.Windows.Forms.ProgressBar
+    $progressBar.Location = New-Object System.Drawing.Point(20, 140)
+    $progressBar.Size = New-Object System.Drawing.Size(460, 25)
+    $progressBar.Minimum = 0
+    $progressBar.Maximum = 100
+    $form.Controls.Add($progressBar)
+
+    # Detailed Log TextBox
+    $logTextBox = New-Object System.Windows.Forms.TextBox
+    $logTextBox.Location = New-Object System.Drawing.Point(20, 180)
+    $logTextBox.Size = New-Object System.Drawing.Size(460, 120)
+    $logTextBox.Multiline = $true
+    $logTextBox.ScrollBars = "Vertical"
+    $logTextBox.ReadOnly = $true
+    $form.Controls.Add($logTextBox)
+
+    return @{
+        Form = $form
+        StatusLabel = $statusLabel
+        ProgressBar = $progressBar
+        LogTextBox = $logTextBox
+    }
+}
+
+function Update-Progress {
+    param(
+        $ProgressUI,
+        [string]$Status,
+        [int]$Percentage = -1
+    )
+
+    if ($ProgressUI) {
+        $ProgressUI.Form.Invoke([Action]{
+            if ($Status) {
+                $ProgressUI.StatusLabel.Text = $Status
             }
-        }
-        else {
-            Write-Host "Execution policy is already set to RemoteSigned." -ForegroundColor Green
-            return $true
-        }
-    }
-    catch {
-        Write-Host "Error setting execution policy: $_" -ForegroundColor Red
-        return $false
-    }
-    finally {
-        # Clean up temporary script if it exists
-        $tempScript = "$env:TEMP\set_execution_policy.ps1"
-        if (Test-Path $tempScript) {
-            Remove-Item $tempScript -Force
-        }
+            
+            if ($Percentage -ge 0) {
+                $ProgressUI.ProgressBar.Value = [Math]::Min($Percentage, 100)
+            }
+        })
     }
 }
 
-# Function to relaunch script as administrator if not already running as admin
-function Relaunch-As-Admin {
-    if (-not (Test-Admin)) {
-        # Relaunch the script with elevated privileges
-        Write-Host "This script requires administrator privileges. Relaunching as administrator..." -ForegroundColor Red
-        
-        # Create a temporary script to run the main script
-        $tempScript = "$env:TEMP\android_sdk_setup.ps1"
-        $currentScript = $PSCommandPath
-        
-        @"
-# Temporary script to run Android SDK setup
-Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$currentScript`"" -Verb RunAs
-"@ | Out-File $tempScript -Encoding UTF8
+function Write-UILog {
+    param(
+        $ProgressUI,
+        [string]$Message
+    )
 
-        # Start the temporary script with elevation
-        Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$tempScript`"" -Verb RunAs
-        exit
+    if ($ProgressUI) {
+        $ProgressUI.Form.Invoke([Action]{
+            $ProgressUI.LogTextBox.AppendText($Message + "`r`n")
+            $ProgressUI.LogTextBox.SelectionStart = $ProgressUI.LogTextBox.TextLength
+            $ProgressUI.LogTextBox.ScrollToCaret()
+        })
     }
 }
 
-# Display banner
-function Show-Banner {
-    Write-Host "${Cyan}${Bold}
-    _    ___      __        ____             _     __
-    | |  / (_)____/ /___  __/ __ \_________  (_)___/ /
-    | | / / / ___/ __/ / / / / / ___/ __ \/ / __  / 
-    | |/ / / /  / /_/ /_/ / /_/ / /  / /_/ / / /_/ /  
-    |___/_/_/   \__/\__,_/_____/_/   \____/_/\__,_/   
-                          
-                          By Cody4code (@fekerineamar)     
-${Reset}"
-}
+function Install-Prerequisites {
+    param($ProgressUI)
 
-# Function to check if a command exists
-function Command-Exists {
-    param([string]$Command)
-    return (Get-Command $Command -ErrorAction SilentlyContinue) -ne $null
-}
-
-# Variables
-$SDK_ROOT = "$env:USERPROFILE\Android\Sdk"
-$CMDLINE_TOOLS_URL = "https://dl.google.com/android/repository/commandlinetools-win-11076708_latest.zip"
-$TEMP_ZIP = "$env:TEMP\commandlinetools.zip"
-$Dependencies = @("wget", "unzip", "curl")
-$SYSTEM_IMAGE = "system-images;android-33;google_apis;x86_64"
-$PLAYSTORE_IMAGE = "system-images;android-33;google_apis_playstore;x86_64"
-
-# Function to install Chocolatey if not present
-function Install-Choco {
-    if (-not (Command-Exists "choco")) {
-        Write-Host "Chocolatey not found, installing..." -ForegroundColor Yellow
+    Write-UILog -ProgressUI $ProgressUI -Message "Checking and installing prerequisites..."
+    
+    # Install Chocolatey if not exists
+    if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
+        Write-UILog -ProgressUI $ProgressUI -Message "Installing Chocolatey package manager..."
         Set-ExecutionPolicy Bypass -Scope Process -Force
-        [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
         Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-        
-        # Refresh environment variables
-        $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-    } else {
-        Write-Host "Chocolatey is already installed." -ForegroundColor Green
     }
-}
 
-# Function to install required dependencies
-function Install-Dependencies {
-    Install-Choco
-    foreach ($dep in $Dependencies) {
-        if (-not (Command-Exists $dep)) {
-            Write-Host "$dep not found, installing..." -ForegroundColor Yellow
-            choco install $dep -y
+    # Install required tools
+    $tools = @("wget", "unzip", "curl")
+    foreach ($tool in $tools) {
+        if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) {
+            Write-UILog -ProgressUI $ProgressUI -Message "Installing $tool..."
+            choco install $tool -y | Out-Null
         }
     }
 }
 
-# Function to set up the environment
-function Setup-Environment {
-    if (-not (Test-Path -Path $SDK_ROOT)) {
-        New-Item -ItemType Directory -Path $SDK_ROOT | Out-Null
-        Write-Host "Created Android SDK directory: $SDK_ROOT" -ForegroundColor Green
-    }
-}
+function Download-AndroidSDK {
+    param($ProgressUI)
 
-# Function to download and set up Android SDK with a progress bar
-function Setup-AndroidSDK {
+    $downloadPath = "$env:TEMP\commandlinetools.zip"
+    $extractPath = "$global:SDK_ROOT\cmdline-tools"
+
+    Write-UILog -ProgressUI $ProgressUI -Message "Downloading Android SDK Command Line Tools..."
+    
     try {
-        # Create WebClient for download
-        $webClient = New-Object System.Net.WebClient
-
-        # Download with progress
-        Write-Host "Downloading Android SDK Command Line Tools..." -ForegroundColor Yellow
-        $webClient.DownloadFile($CMDLINE_TOOLS_URL, $TEMP_ZIP)
-        
-        # Verify download
-        if (-not (Test-Path $TEMP_ZIP)) {
-            throw "Download failed. Unable to find downloaded file."
+        # Create SDK directory if not exists
+        if (-not (Test-Path $global:SDK_ROOT)) {
+            New-Item -ItemType Directory -Path $global:SDK_ROOT | Out-Null
         }
 
-        # Extract with progress
-        Write-Host "Extracting Android SDK..." -ForegroundColor Yellow
-        Expand-Archive -Path $TEMP_ZIP -DestinationPath "$SDK_ROOT\cmdline-tools" -Force
-        
-        # Rename extracted folder
-        Rename-Item "$SDK_ROOT\cmdline-tools\cmdline-tools" "latest" -Force
-        
-        # Clean up temporary zip
-        Remove-Item $TEMP_ZIP -Force
+        # Download SDK
+        $webClient = New-Object System.Net.WebClient
+        $webClient.DownloadFile($global:CMDLINE_TOOLS_URL, $downloadPath)
 
-        Write-Host "Android SDK Command Line Tools installed successfully!" -ForegroundColor Green
+        Write-UILog -ProgressUI $ProgressUI -Message "Extracting Android SDK..."
+        Expand-Archive -Path $downloadPath -DestinationPath $extractPath -Force
+
+        # Rename extracted folder
+        Rename-Item "$extractPath\cmdline-tools" "latest" -Force
+
+        # Clean up zip
+        Remove-Item $downloadPath -Force
     }
     catch {
-        Write-Host "Error during Android SDK setup: $_" -ForegroundColor Red
+        Write-UILog -ProgressUI $ProgressUI -Message "Error downloading SDK: $_"
         throw
     }
 }
 
-# Function to install Android components
 function Install-AndroidComponents {
+    param($ProgressUI)
+
+    Write-UILog -ProgressUI $ProgressUI -Message "Installing Android SDK components..."
+    
     # Accept licenses
-    Write-Host "Accepting Android SDK licenses..." -ForegroundColor Yellow
-    & "$SDK_ROOT\cmdline-tools\latest\bin\sdkmanager.bat" --licenses | Out-Null
+    Start-Process "$global:SDK_ROOT\cmdline-tools\latest\bin\sdkmanager.bat" --licenses -Wait
 
-    # Install platform tools and platform
-    $componentsToInstall = @("platform-tools", "platforms;android-33")
+    # Install core components
+    $components = @(
+        "platform-tools", 
+        "platforms;android-33", 
+        "system-images;android-33;google_apis;x86_64"
+    )
 
-    # Ask about Play Store image
-    $IncludePlayStore = Read-Host "Include Play Store system image? (y/n)"
-    if ($IncludePlayStore -eq "y") {
-        $componentsToInstall += $PLAYSTORE_IMAGE
-    } else {
-        $componentsToInstall += $SYSTEM_IMAGE
-    }
-
-    # Install components
-    foreach ($component in $componentsToInstall) {
-        Write-Host "Installing $component..." -ForegroundColor Yellow
-        & "$SDK_ROOT\cmdline-tools\latest\bin\sdkmanager.bat" "$component"
+    foreach ($component in $components) {
+        Write-UILog -ProgressUI $ProgressUI -Message "Installing $component..."
+        Start-Process "$global:SDK_ROOT\cmdline-tools\latest\bin\sdkmanager.bat" $component -Wait
     }
 }
 
-# Add environment variables
-function Set-AndroidEnvironmentVariables {
+function Set-AndroidEnvironment {
+    param($ProgressUI)
+
+    Write-UILog -ProgressUI $ProgressUI -Message "Configuring Android environment variables..."
+    
     # Set ANDROID_HOME
-    [Environment]::SetEnvironmentVariable("ANDROID_HOME", $SDK_ROOT, "Machine")
+    [Environment]::SetEnvironmentVariable("ANDROID_HOME", $global:SDK_ROOT, "Machine")
     
     # Add platform-tools to PATH
-    $platformToolsPath = "$SDK_ROOT\platform-tools"
+    $platformToolsPath = "$global:SDK_ROOT\platform-tools"
     $currentPath = [Environment]::GetEnvironmentVariable("PATH", "Machine")
     if ($currentPath -notlike "*$platformToolsPath*") {
         [Environment]::SetEnvironmentVariable("PATH", "$currentPath;$platformToolsPath", "Machine")
     }
-
-    Write-Host "Android environment variables set successfully!" -ForegroundColor Green
 }
 
-# Main function to orchestrate the entire setup
-function Main {
-    # Show welcome banner
-    Show-Banner
-
-    # Attempt to set execution policy
-    $policySet = Set-ExecutionPolicyWithElevation
-    if (-not $policySet) {
-        Write-Host "Cannot proceed: Failed to set execution policy." -ForegroundColor Red
-        exit
-    }
-
-    # Ensure admin privileges
-    Relaunch-As-Admin
-
-    # Perform setup steps
+function Start-AndroidSDKSetup {
+    $progressUI = $null
     try {
-        Install-Dependencies         # Install necessary dependencies
-        Setup-Environment            # Prepare SDK directory
-        Setup-AndroidSDK             # Download Android SDK tools
-        Install-AndroidComponents    # Install Android components
-        Set-AndroidEnvironmentVariables  # Set up environment variables
+        # Initialize Progress UI
+        $progressUI = Show-AdvancedProgressForm
+        $progressUI.Form.Show()
 
-        Write-Host "`n`n🎉 Android Emulator Setup Complete! 🎉" -ForegroundColor Green
-        Write-Host "Android SDK installed in: $SDK_ROOT" -ForegroundColor Cyan
-        
-        # Prompt to refresh environment
-        Write-Host "`nPlease restart your PowerShell or command prompt to apply environment changes." -ForegroundColor Yellow
+        # Installation Stages
+        Update-Progress -ProgressUI $progressUI -Status "Installing Prerequisites..." -Percentage 10
+        Install-Prerequisites -ProgressUI $progressUI
+
+        Update-Progress -ProgressUI $progressUI -Status "Downloading Android SDK..." -Percentage 40
+        Download-AndroidSDK -ProgressUI $progressUI
+
+        Update-Progress -ProgressUI $progressUI -Status "Installing Android Components..." -Percentage 70
+        Install-AndroidComponents -ProgressUI $progressUI
+
+        Update-Progress -ProgressUI $progressUI -Status "Configuring Environment..." -Percentage 90
+        Set-AndroidEnvironment -ProgressUI $progressUI
+
+        # Completion
+        Update-Progress -ProgressUI $progressUI -Status "Android SDK Installation Complete!" -Percentage 100
+        [System.Windows.MessageBox]::Show("Android SDK has been successfully installed!", "Installation Complete", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
     }
     catch {
-        Write-Host "An error occurred during setup: $_" -ForegroundColor Red
+        [System.Windows.MessageBox]::Show("Installation failed: $_", "Installation Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+    }
+    finally {
+        if ($progressUI) {
+            $progressUI.Form.Close()
+        }
     }
 }
 
-# Run the main function
-Main
+# Main Execution
+[System.Windows.Forms.Application]::EnableVisualStyles()
+Start-AndroidSDKSetup
