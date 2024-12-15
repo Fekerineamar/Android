@@ -1,4 +1,4 @@
-# Comprehensive Android SDK Setup Executable
+# Comprehensive Android SDK Setup Executable with Explicit Overload Handling
 # by cody4code (fekerineamar)
 # Requires PowerShell 5.1+ and .NET Framework 4.7.2+
 
@@ -6,14 +6,26 @@ Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName PresentationFramework
 Add-Type -AssemblyName System.Net.Http
-Add-Type -AssemblyName System.Threading
 
-# Global Configurations
+# Logging and Configuration
 $global:LogFile = "$env:TEMP\AndroidSDKSetup.log"
 $global:SDK_ROOT = "$env:USERPROFILE\Android\Sdk"
 $global:CMDLINE_TOOLS_URL = "https://dl.google.com/android/repository/commandlinetools-win-11076708_latest.zip"
 
-# Helper: Log Messages
+# ASCII Art Logo
+$global:AndroidAsciiLogo = @"
+    /\__/\   Android SDK
+   /`    '\  Setup Wizard
+  === 0  0 ===
+  \  --   --  /
+  /        \ 
+ /          \
+|            |
+ \  ||  ||  /
+  \_oo__oo_/#
+"@
+
+# Helper Functions
 function Write-DetailedLog {
     param(
         [string]$Message,
@@ -25,7 +37,20 @@ function Write-DetailedLog {
     Write-Host $logEntry
 }
 
-# Create Progress Form
+function Write-UILog {
+    param(
+        $ProgressUI,
+        [string]$Message
+    )
+    if ($ProgressUI) {
+        $ProgressUI.Form.Invoke([Action]{
+            $ProgressUI.LogTextBox.AppendText($Message + "`r`n")
+            $ProgressUI.LogTextBox.SelectionStart = $ProgressUI.LogTextBox.TextLength
+            $ProgressUI.LogTextBox.ScrollToCaret()
+        })
+    }
+}
+
 function Show-AdvancedProgressForm {
     $form = New-Object System.Windows.Forms.Form
     $form.Text = "Android SDK Setup Wizard - by cody4code"
@@ -64,110 +89,116 @@ function Show-AdvancedProgressForm {
     }
 }
 
-# Update Progress
 function Update-Progress {
     param(
         $ProgressUI,
         [string]$Status,
         [int]$Percentage
     )
-
-    $ProgressUI.Form.Invoke([Action]{
-        $ProgressUI.StatusLabel.Text = $Status
-        $ProgressUI.ProgressBar.Value = $Percentage
-    })
+    if ($ProgressUI) {
+        $ProgressUI.Form.Invoke([Action]{
+            if ($Status) { $ProgressUI.StatusLabel.Text = $Status }
+            if ($Percentage -ge 0) { $ProgressUI.ProgressBar.Value = [Math]::Min($Percentage, 100) }
+        })
+    }
 }
 
-# Append Logs to UI
-function Write-UILog {
-    param(
-        $ProgressUI,
-        [string]$Message
-    )
-
-    $ProgressUI.Form.Invoke([Action]{
-        $ProgressUI.LogTextBox.AppendText($Message + "`r`n")
-        $ProgressUI.LogTextBox.SelectionStart = $ProgressUI.LogTextBox.Text.Length
-        $ProgressUI.LogTextBox.ScrollToCaret()
-    })
-}
-
-# Download File
+# Explicit Overload Resolution Functions
 function Resolve-WebDownload {
     param(
         [string]$Url,
-        [string]$Destination,
-        [object]$ProgressUI
+        [string]$DestinationPath,
+        $ProgressUI
     )
 
     try {
-        Write-UILog -ProgressUI $ProgressUI -Message "Downloading $Url..."
-        Write-DetailedLog "Starting download from $Url"
+        # Create HttpClient with explicit configuration
+        $handler = New-Object System.Net.Http.HttpClientHandler
+        $handler.ServerCertificateCustomValidationCallback = [System.Func[System.Net.Http.HttpRequestMessage, System.Security.Cryptography.X509Certificates.X509Certificate2, System.Security.Cryptography.X509Certificates.X509Chain, System.Net.Security.SslPolicyErrors, bool]]{ return $true }
+        
+        $httpClient = New-Object System.Net.Http.HttpClient($handler)
+        $httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("PowerShell SDK Installer")
 
-        $httpClient = [System.Net.Http.HttpClient]::new()
-        $response = $httpClient.GetAsync($Url, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).Result
-
-        if (-not $response.IsSuccessStatusCode) {
-            throw "Download failed with status code: $($response.StatusCode)"
-        }
-
-        $stream = $response.Content.ReadAsStreamAsync().Result
-        $fileStream = [System.IO.FileStream]::new($Destination, [System.IO.FileMode]::Create)
-        $buffer = New-Object byte[] 8192
-
-        while (($bytesRead = $stream.Read($buffer, 0, $buffer.Length)) -gt 0) {
-            $fileStream.Write($buffer, 0, $bytesRead)
-        }
-
+        # Explicit async download
+        $downloadTask = $httpClient.GetStreamAsync($Url)
+        $downloadTask.Wait()
+        
+        $fileStream = [System.IO.File]::Create($DestinationPath)
+        $downloadTask.Result.CopyTo($fileStream)
         $fileStream.Close()
-        $stream.Close()
-        $httpClient.Dispose()
 
-        Write-UILog -ProgressUI $ProgressUI -Message "Download complete: $Destination"
-        Write-DetailedLog "Download complete"
+        Write-UILog -ProgressUI $ProgressUI -Message "Download completed successfully."
     }
     catch {
-        Write-DetailedLog "Download error: $_" "ERROR"
+        Write-UILog -ProgressUI $ProgressUI -Message "Download error: $_"
+        throw
+    }
+    finally {
+        if ($httpClient) { $httpClient.Dispose() }
+    }
+}
+
+function Resolve-ProcessExecution {
+    param(
+        [string]$FilePath,
+        [string[]]$ArgumentList,
+        $ProgressUI
+    )
+
+    try {
+        $processInfo = New-Object System.Diagnostics.ProcessStartInfo
+        $processInfo.FileName = $FilePath
+        $processInfo.RedirectStandardOutput = $true
+        $processInfo.RedirectStandardError = $true
+        $processInfo.UseShellExecute = $false
+        
+        foreach ($arg in $ArgumentList) {
+            $processInfo.ArgumentList.Add($arg)
+        }
+
+        $process = [System.Diagnostics.Process]::Start($processInfo)
+        $output = $process.StandardOutput.ReadToEnd()
+        $error = $process.StandardError.ReadToEnd()
+        
+        $process.WaitForExit()
+
+        if ($error) {
+            Write-UILog -ProgressUI $ProgressUI -Message "Process Error: $error"
+        }
+        
+        Write-UILog -ProgressUI $ProgressUI -Message "Process Output: $output"
+    }
+    catch {
+        Write-UILog -ProgressUI $ProgressUI -Message "Execution error: $_"
         throw
     }
 }
 
-# Main Setup Function
+# Android SDK Setup
 function Start-AndroidSDKSetup {
     $progressUI = Show-AdvancedProgressForm
-    $jobContext = [System.Threading.SynchronizationContext]::Current
+    $progressUI.Form.Show()
 
-    # Display UI
-    $null = [System.Threading.Tasks.Task]::Run({
-        try {
-            $jobContext.Post([Action]{
-                Update-Progress -ProgressUI $progressUI -Status "Downloading SDK..." -Percentage 20
-            }, $null)
+    try {
+        # Download Command Line Tools
+        Update-Progress -ProgressUI $progressUI -Status "Downloading SDK Tools..." -Percentage 20
+        Download-AndroidSDK -ProgressUI $progressUI
 
-            # Download Command Line Tools
-            Resolve-WebDownload -Url $global:CMDLINE_TOOLS_URL -Destination "$env:TEMP\commandlinetools.zip" -ProgressUI $progressUI
+        # Install SDK Components
+        Update-Progress -ProgressUI $progressUI -Status "Installing SDK Components..." -Percentage 60
+        Install-AndroidComponents -ProgressUI $progressUI
 
-            $jobContext.Post([Action]{
-                Update-Progress -ProgressUI $progressUI -Status "Installing SDK Components..." -Percentage 60
-            }, $null)
-
-            Start-Sleep -Seconds 3 # Simulated install step
-
-            $jobContext.Post([Action]{
-                Update-Progress -ProgressUI $progressUI -Status "Finalizing Setup..." -Percentage 100
-            }, $null)
-
-            Write-UILog -ProgressUI $progressUI -Message "Android SDK setup completed successfully!"
-        }
-        catch {
-            $jobContext.Post([Action]{
-                Write-UILog -ProgressUI $progressUI -Message "An error occurred: $_"
-                [System.Windows.MessageBox]::Show("Error: $_", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
-            }, $null)
-        }
-    })
-
-    $progressUI.Form.ShowDialog()
+        # Finalize
+        Update-Progress -ProgressUI $progressUI -Status "Finalizing Setup..." -Percentage 100
+        Write-UILog -ProgressUI $progressUI -Message "Android SDK setup completed successfully!"
+    }
+    catch {
+        Write-UILog -ProgressUI $progressUI -Message "Error: $_"
+        [System.Windows.MessageBox]::Show("Error: $_", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+    }
+    finally {
+        $progressUI.Form.Close()
+    }
 }
 
 # Main Execution
