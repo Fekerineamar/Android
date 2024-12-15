@@ -174,7 +174,74 @@ function Resolve-ProcessExecution {
     }
 }
 
-# Android SDK Setup
+# SDK Download Function
+function Download-AndroidSDK {
+    param($ProgressUI)
+
+    $downloadPath = "$env:TEMP\commandlinetools.zip"
+    $extractPath = "$global:SDK_ROOT\cmdline-tools"
+
+    Write-UILog -ProgressUI $ProgressUI -Message "Downloading Android SDK Command Line Tools..."
+    
+    try {
+        # Explicit directory creation
+        if (-not (Test-Path $global:SDK_ROOT)) {
+            New-Item -ItemType Directory -Path $global:SDK_ROOT -Force | Out-Null
+        }
+
+        # Use explicit download method
+        Resolve-WebDownload -Url $global:CMDLINE_TOOLS_URL -DestinationPath $downloadPath -ProgressUI $ProgressUI
+
+        Write-UILog -ProgressUI $ProgressUI -Message "Extracting Android SDK..."
+        
+        # Explicit archive expansion
+        Expand-Archive -Path $downloadPath -DestinationPath $extractPath -Force
+
+        # Explicit folder renaming
+        if (Test-Path "$extractPath\cmdline-tools") {
+            Rename-Item -Path "$extractPath\cmdline-tools" -NewName "latest" -Force
+        }
+
+        # Clean up zip
+        Remove-Item $downloadPath -Force
+    }
+    catch {
+        Write-UILog -ProgressUI $ProgressUI -Message "SDK Download Error: $_"
+        throw
+    }
+}
+
+# Android Component Installation Function
+function Install-AndroidComponents {
+    param($ProgressUI)
+
+    Write-UILog -ProgressUI $ProgressUI -Message "Installing Android SDK components..."
+    
+    $sdkManagerPath = "$global:SDK_ROOT\cmdline-tools\latest\bin\sdkmanager.bat"
+    
+    try {
+        # Explicit license acceptance
+        Resolve-ProcessExecution -FilePath $sdkManagerPath -ArgumentList @("--licenses") -ProgressUI $ProgressUI
+
+        # Install core components
+        $components = @(
+            "platform-tools", 
+            "platforms;android-33", 
+            "system-images;android-33;google_apis;x86_64"
+        )
+
+        foreach ($component in $components) {
+            Write-UILog -ProgressUI $ProgressUI -Message "Installing $component..."
+            Resolve-ProcessExecution -FilePath $sdkManagerPath -ArgumentList @($component) -ProgressUI $ProgressUI
+        }
+    }
+    catch {
+        Write-UILog -ProgressUI $ProgressUI -Message "Component Installation Error: $_"
+        throw
+    }
+}
+
+# Main Setup Function
 function Start-AndroidSDKSetup {
     $progressUI = Show-AdvancedProgressForm
     $progressUI.Form.Show()
