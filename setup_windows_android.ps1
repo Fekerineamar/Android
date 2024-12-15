@@ -16,11 +16,17 @@ function Test-Admin {
 # Function to relaunch script as administrator if not already running as admin
 function Relaunch-As-Admin {
     if (-not (Test-Admin)) {
-        # Relaunch the script with elevated privileges
+        # Relaunch the script with elevated privileges and Bypass execution policy
         Write-Host "This script requires administrator privileges. Relaunching as administrator..." -ForegroundColor Red
         Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File $PSCommandPath" -Verb RunAs
         exit
     }
+}
+
+# Check if the script is already running with the proper execution policy, if not, relaunch it with Bypass
+if ($PSCmdlet.MyInvocation.Line -notmatch "-ExecutionPolicy Bypass") {
+    Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File $PSCommandPath" -Verb RunAs
+    exit
 }
 
 # Call Relaunch-As-Admin to check if elevated permissions are needed
