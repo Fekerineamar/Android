@@ -6,6 +6,26 @@ $Cyan = "`e[36m"
 $Bold = "`e[1m"
 $Reset = "`e[0m"
 
+# Function to check if running as administrator
+function Test-Admin {
+    $currentIdentity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = New-Object System.Security.Principal.WindowsPrincipal($currentIdentity)
+    return $principal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+# Function to relaunch script as administrator if not already running as admin
+function Relaunch-As-Admin {
+    if (-not (Test-Admin)) {
+        # Relaunch the script with elevated privileges
+        Write-Host "This script requires administrator privileges. Relaunching as administrator..." -ForegroundColor Red
+        Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File $PSCommandPath" -Verb RunAs
+        exit
+    }
+}
+
+# Call Relaunch-As-Admin to check if elevated permissions are needed
+Relaunch-As-Admin
+
 # Display banner
 Write-Host "${Cyan}${Bold}
     _    ___      __        ____             _     __
@@ -27,7 +47,7 @@ function Command-Exists {
 function Set-ExecutionPolicyIfNeeded {
     $currentPolicy = Get-ExecutionPolicy -Scope CurrentUser
     if ($currentPolicy -ne 'RemoteSigned') {
-        Write-Host "Current execution policy is '$currentPolicy'. Setting to 'RemoteSigned'."
+        Write-Host "Current execution policy is '$currentPolicy'. Setting to 'RemoteSigned'." 
         Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
     } else {
         Write-Host "Execution policy is already set to 'RemoteSigned'."
@@ -45,18 +65,12 @@ $Dependencies = @("wget", "unzip", "curl")
 $SYSTEM_IMAGE = "system-images;android-33;google_apis;x86_64"
 $PLAYSTORE_IMAGE = "system-images;android-33;google_apis_playstore;x86_64"
 
-# Function to install Chocolatey if not present and ensure it's in PATH
+# Function to install Chocolatey if not present
 function Install-Choco {
     if (-not (Command-Exists "choco")) {
         Write-Host "Chocolatey not found, installing..." -ForegroundColor Yellow
         Set-ExecutionPolicy Bypass -Scope Process -Force
         Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-        
-        # Add Chocolatey to PATH if it's not already there
-        $chocoPath = "C:\ProgramData\Chocolatey\bin"
-        $env:Path += ";$chocoPath"
-        
-        Write-Host "Chocolatey installed successfully, added to PATH" -ForegroundColor Green
     } else {
         Write-Host "Chocolatey is already installed." -ForegroundColor Green
     }
@@ -119,7 +133,6 @@ function Setup-AndroidSDK {
 }
 
 # Function to install Android components
-# Function to install Android components with progress
 function Install-AndroidComponents {
     Write-Host "Accepting Android SDK licenses..." -ForegroundColor Yellow
     & "$SDK_ROOT\cmdline-tools\latest\bin\sdkmanager.bat" --licenses
@@ -161,7 +174,6 @@ function Install-ComponentWithProgress {
     # Remove temporary output file
     Remove-Item "sdkmanager_output.txt"
 }
-
 
 # Main function
 function Main {
