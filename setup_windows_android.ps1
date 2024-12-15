@@ -1,4 +1,5 @@
 # Comprehensive Android SDK Setup Executable
+# by cody4code (fekerineamar)
 # Requires PowerShell 5.1+ and .NET Framework 4.7.2+
 
 Add-Type -AssemblyName System.Windows.Forms
@@ -22,32 +23,33 @@ function Write-DetailedLog {
     Write-Host $logEntry
 }
 
+# Function to display the progress form
 function Show-AdvancedProgressForm {
     $form = New-Object System.Windows.Forms.Form
-    $form.Text = "Android SDK Setup Wizard"
-    $form.Size = New-Object System.Drawing.Size(500, 350)
+    $form.Text = "Android SDK Setup Wizard - by cody4code (fekerineamar)"
+    $form.Size = New-Object System.Drawing.Size(500, 400)
     $form.StartPosition = "CenterScreen"
     $form.BackColor = [System.Drawing.Color]::White
 
-    # Logo Panel
-    $logoPanel = New-Object System.Windows.Forms.Panel
-    $logoPanel.Location = New-Object System.Drawing.Point(0, 0)
-    $logoPanel.Size = New-Object System.Drawing.Size(500, 80)
-    $logoPanel.BackColor = [System.Drawing.Color]::FromArgb(36, 41, 46)
-    $form.Controls.Add($logoPanel)
+    # Branding Panel
+    $brandingPanel = New-Object System.Windows.Forms.Panel
+    $brandingPanel.Location = New-Object System.Drawing.Point(0, 0)
+    $brandingPanel.Size = New-Object System.Drawing.Size(500, 60)
+    $brandingPanel.BackColor = [System.Drawing.Color]::FromArgb(36, 41, 46)
+    $form.Controls.Add($brandingPanel)
 
-    # Logo Text
-    $logoLabel = New-Object System.Windows.Forms.Label
-    $logoLabel.Text = "Android SDK Setup"
-    $logoLabel.Font = New-Object System.Drawing.Font("Segoe UI", 16, [System.Drawing.FontStyle]::Bold)
-    $logoLabel.ForeColor = [System.Drawing.Color]::White
-    $logoLabel.Location = New-Object System.Drawing.Point(20, 25)
-    $logoLabel.Size = New-Object System.Drawing.Size(300, 40)
-    $logoPanel.Controls.Add($logoLabel)
+    # Branding Text
+    $brandingLabel = New-Object System.Windows.Forms.Label
+    $brandingLabel.Text = "Android SDK - By cody4code (fekerineamar)"
+    $brandingLabel.Font = New-Object System.Drawing.Font("Segoe UI", 12, [System.Drawing.FontStyle]::Bold)
+    $brandingLabel.ForeColor = [System.Drawing.Color]::White
+    $brandingLabel.Location = New-Object System.Drawing.Point(10, 15)
+    $brandingLabel.Size = New-Object System.Drawing.Size(480, 30)
+    $brandingPanel.Controls.Add($brandingLabel)
 
     # Status Label
     $statusLabel = New-Object System.Windows.Forms.Label
-    $statusLabel.Location = New-Object System.Drawing.Point(20, 100)
+    $statusLabel.Location = New-Object System.Drawing.Point(20, 80)
     $statusLabel.Size = New-Object System.Drawing.Size(460, 30)
     $statusLabel.Font = New-Object System.Drawing.Font("Segoe UI", 10)
     $statusLabel.Text = "Preparing Android SDK Installation..."
@@ -55,7 +57,7 @@ function Show-AdvancedProgressForm {
 
     # Progress Bar
     $progressBar = New-Object System.Windows.Forms.ProgressBar
-    $progressBar.Location = New-Object System.Drawing.Point(20, 140)
+    $progressBar.Location = New-Object System.Drawing.Point(20, 120)
     $progressBar.Size = New-Object System.Drawing.Size(460, 25)
     $progressBar.Minimum = 0
     $progressBar.Maximum = 100
@@ -63,12 +65,21 @@ function Show-AdvancedProgressForm {
 
     # Detailed Log TextBox
     $logTextBox = New-Object System.Windows.Forms.TextBox
-    $logTextBox.Location = New-Object System.Drawing.Point(20, 180)
-    $logTextBox.Size = New-Object System.Drawing.Size(460, 120)
+    $logTextBox.Location = New-Object System.Drawing.Point(20, 160)
+    $logTextBox.Size = New-Object System.Drawing.Size(460, 150)
     $logTextBox.Multiline = $true
     $logTextBox.ScrollBars = "Vertical"
     $logTextBox.ReadOnly = $true
     $form.Controls.Add($logTextBox)
+
+    # Credits Label
+    $creditsLabel = New-Object System.Windows.Forms.Label
+    $creditsLabel.Text = "Powered by cody4code (fekerineamar)"
+    $creditsLabel.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Italic)
+    $creditsLabel.ForeColor = [System.Drawing.Color]::Gray
+    $creditsLabel.Location = New-Object System.Drawing.Point(20, 330)
+    $creditsLabel.Size = New-Object System.Drawing.Size(460, 20)
+    $form.Controls.Add($creditsLabel)
 
     return @{
         Form = $form
@@ -78,6 +89,7 @@ function Show-AdvancedProgressForm {
     }
 }
 
+# Function to update progress UI
 function Update-Progress {
     param(
         $ProgressUI,
@@ -98,6 +110,7 @@ function Update-Progress {
     }
 }
 
+# Function to write logs to UI
 function Write-UILog {
     param(
         $ProgressUI,
@@ -113,132 +126,38 @@ function Write-UILog {
     }
 }
 
-function Install-Prerequisites {
-    param($ProgressUI)
-
-    Write-UILog -ProgressUI $ProgressUI -Message "Checking and installing prerequisites..."
-    
-    # Install Chocolatey if not exists
-    if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
-        Write-UILog -ProgressUI $ProgressUI -Message "Installing Chocolatey package manager..."
-        Set-ExecutionPolicy Bypass -Scope Process -Force
-        Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-    }
-
-    # Install required tools
-    $tools = @("wget", "unzip", "curl")
-    foreach ($tool in $tools) {
-        if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) {
-            Write-UILog -ProgressUI $ProgressUI -Message "Installing $tool..."
-            choco install $tool -y | Out-Null
-        }
-    }
-}
-
-function Download-AndroidSDK {
-    param($ProgressUI)
-
-    $downloadPath = "$env:TEMP\commandlinetools.zip"
-    $extractPath = "$global:SDK_ROOT\cmdline-tools"
-
-    Write-UILog -ProgressUI $ProgressUI -Message "Downloading Android SDK Command Line Tools..."
-    
-    try {
-        # Create SDK directory if not exists
-        if (-not (Test-Path $global:SDK_ROOT)) {
-            New-Item -ItemType Directory -Path $global:SDK_ROOT | Out-Null
-        }
-
-        # Download SDK
-        $webClient = New-Object System.Net.WebClient
-        $webClient.DownloadFile($global:CMDLINE_TOOLS_URL, $downloadPath)
-
-        Write-UILog -ProgressUI $ProgressUI -Message "Extracting Android SDK..."
-        Expand-Archive -Path $downloadPath -DestinationPath $extractPath -Force
-
-        # Rename extracted folder
-        Rename-Item "$extractPath\cmdline-tools" "latest" -Force
-
-        # Clean up zip
-        Remove-Item $downloadPath -Force
-    }
-    catch {
-        Write-UILog -ProgressUI $ProgressUI -Message "Error downloading SDK: $_"
-        throw
-    }
-}
-
-function Install-AndroidComponents {
-    param($ProgressUI)
-
-    Write-UILog -ProgressUI $ProgressUI -Message "Installing Android SDK components..."
-    
-    # Accept licenses
-    Start-Process "$global:SDK_ROOT\cmdline-tools\latest\bin\sdkmanager.bat" --licenses -Wait
-
-    # Install core components
-    $components = @(
-        "platform-tools", 
-        "platforms;android-33", 
-        "system-images;android-33;google_apis;x86_64"
+# Run tasks on a separate thread to keep UI responsive
+function Run-InBackground {
+    param(
+        [scriptblock]$Task,
+        $ProgressUI
     )
-
-    foreach ($component in $components) {
-        Write-UILog -ProgressUI $ProgressUI -Message "Installing $component..."
-        Start-Process "$global:SDK_ROOT\cmdline-tools\latest\bin\sdkmanager.bat" $component -Wait
-    }
-}
-
-function Set-AndroidEnvironment {
-    param($ProgressUI)
-
-    Write-UILog -ProgressUI $ProgressUI -Message "Configuring Android environment variables..."
-    
-    # Set ANDROID_HOME
-    [Environment]::SetEnvironmentVariable("ANDROID_HOME", $global:SDK_ROOT, "Machine")
-    
-    # Add platform-tools to PATH
-    $platformToolsPath = "$global:SDK_ROOT\platform-tools"
-    $currentPath = [Environment]::GetEnvironmentVariable("PATH", "Machine")
-    if ($currentPath -notlike "*$platformToolsPath*") {
-        [Environment]::SetEnvironmentVariable("PATH", "$currentPath;$platformToolsPath", "Machine")
-    }
-}
-
-function Start-AndroidSDKSetup {
-    $progressUI = $null
-    try {
-        # Initialize Progress UI
-        $progressUI = Show-AdvancedProgressForm
-        $progressUI.Form.Show()
-
-        # Installation Stages
-        Update-Progress -ProgressUI $progressUI -Status "Installing Prerequisites..." -Percentage 10
-        Install-Prerequisites -ProgressUI $progressUI
-
-        Update-Progress -ProgressUI $progressUI -Status "Downloading Android SDK..." -Percentage 40
-        Download-AndroidSDK -ProgressUI $progressUI
-
-        Update-Progress -ProgressUI $progressUI -Status "Installing Android Components..." -Percentage 70
-        Install-AndroidComponents -ProgressUI $progressUI
-
-        Update-Progress -ProgressUI $progressUI -Status "Configuring Environment..." -Percentage 90
-        Set-AndroidEnvironment -ProgressUI $progressUI
-
-        # Completion
-        Update-Progress -ProgressUI $progressUI -Status "Android SDK Installation Complete!" -Percentage 100
-        [System.Windows.MessageBox]::Show("Android SDK has been successfully installed!", "Installation Complete", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
-    }
-    catch {
-        [System.Windows.MessageBox]::Show("Installation failed: $_", "Installation Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
-    }
-    finally {
-        if ($progressUI) {
-            $progressUI.Form.Close()
+    Start-Job -ScriptBlock {
+        Param ($Task, $ProgressUI)
+        try {
+            &$Task
         }
-    }
+        catch {
+            Write-UILog -ProgressUI $ProgressUI -Message "Error: $_"
+        }
+    } -ArgumentList $Task, $ProgressUI
 }
 
 # Main Execution
+function Start-AndroidSDKSetup {
+    $progressUI = Show-AdvancedProgressForm
+    $progressUI.Form.Show()
+
+    $task = {
+        Install-Prerequisites -ProgressUI $ProgressUI
+        Download-AndroidSDK -ProgressUI $ProgressUI
+        Install-AndroidComponents -ProgressUI $ProgressUI
+        Set-AndroidEnvironment -ProgressUI $ProgressUI
+        Update-Progress -ProgressUI $ProgressUI -Status "Setup Complete!" -Percentage 100
+    }
+
+    Run-InBackground -Task $task -ProgressUI $progressUI
+}
+
 [System.Windows.Forms.Application]::EnableVisualStyles()
 Start-AndroidSDKSetup
