@@ -45,12 +45,18 @@ $Dependencies = @("wget", "unzip", "curl")
 $SYSTEM_IMAGE = "system-images;android-33;google_apis;x86_64"
 $PLAYSTORE_IMAGE = "system-images;android-33;google_apis_playstore;x86_64"
 
-# Function to install Chocolatey if not present
+# Function to install Chocolatey if not present and ensure it's in PATH
 function Install-Choco {
     if (-not (Command-Exists "choco")) {
         Write-Host "Chocolatey not found, installing..." -ForegroundColor Yellow
         Set-ExecutionPolicy Bypass -Scope Process -Force
         Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+        
+        # Add Chocolatey to PATH if it's not already there
+        $chocoPath = "C:\ProgramData\Chocolatey\bin"
+        $env:Path += ";$chocoPath"
+        
+        Write-Host "Chocolatey installed successfully, added to PATH" -ForegroundColor Green
     } else {
         Write-Host "Chocolatey is already installed." -ForegroundColor Green
     }
@@ -113,18 +119,49 @@ function Setup-AndroidSDK {
 }
 
 # Function to install Android components
+# Function to install Android components with progress
 function Install-AndroidComponents {
+    Write-Host "Accepting Android SDK licenses..." -ForegroundColor Yellow
     & "$SDK_ROOT\cmdline-tools\latest\bin\sdkmanager.bat" --licenses
-    & "$SDK_ROOT\cmdline-tools\latest\bin\sdkmanager.bat" "platform-tools" "platforms;android-33"
+
+    # Install platform-tools and platform android-33 with progress
+    Install-ComponentWithProgress "platform-tools"
+    Install-ComponentWithProgress "platforms;android-33"
 
     # Ask user if they want the Play Store image
     $IncludePlayStore = Read-Host "Include Play Store system image? (y/n)"
     if ($IncludePlayStore -eq "y") {
-        & "$SDK_ROOT\cmdline-tools\latest\bin\sdkmanager.bat" $PLAYSTORE_IMAGE
+        Install-ComponentWithProgress $PLAYSTORE_IMAGE
     } else {
-        & "$SDK_ROOT\cmdline-tools\latest\bin\sdkmanager.bat" $SYSTEM_IMAGE
+        Install-ComponentWithProgress $SYSTEM_IMAGE
     }
 }
+
+# Function to install a component with progress
+function Install-ComponentWithProgress {
+    param([string]$component)
+    
+    Write-Host "Installing $component..." -ForegroundColor Yellow
+
+    # Run sdkmanager and capture output
+    $process = Start-Process -FilePath "$SDK_ROOT\cmdline-tools\latest\bin\sdkmanager.bat" -ArgumentList $component -PassThru -RedirectStandardOutput "sdkmanager_output.txt" -NoNewWindow
+
+    # Wait for process to finish
+    $process.WaitForExit()
+
+    # Read the output and look for progress
+    $output = Get-Content "sdkmanager_output.txt"
+    $output | ForEach-Object {
+        if ($_ -match "(\d+)%") {
+            $progress = [int]$matches[1]
+            Write-Progress -Activity "Installing $component" -Status "$progress% Complete" -PercentComplete $progress
+        }
+    }
+
+    # Remove temporary output file
+    Remove-Item "sdkmanager_output.txt"
+}
+
 
 # Main function
 function Main {
