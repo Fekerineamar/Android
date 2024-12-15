@@ -1,10 +1,12 @@
-# Comprehensive Android SDK Setup Executable with Threading
+# Comprehensive Android SDK Setup Executable
+# by cody4code (fekerineamar)
 # Requires PowerShell 5.1+ and .NET Framework 4.7.2+
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName PresentationFramework
 Add-Type -AssemblyName System.Threading
+Add-Type -AssemblyName System.Net.Http
 
 # Logging and Configuration
 $global:LogFile = "$env:TEMP\AndroidSDKSetup.log"
@@ -36,254 +38,145 @@ function Write-DetailedLog {
     Write-Host $logEntry
 }
 
-function Show-AdvancedProgressForm {
-    $form = New-Object System.Windows.Forms.Form
-    $form.Text = "Android SDK Setup Wizard"
-    $form.Size = New-Object System.Drawing.Size(600, 450)
-    $form.StartPosition = "CenterScreen"
-    $form.BackColor = [System.Drawing.Color]::White
-
-    # Logo Panel
-    $logoPanel = New-Object System.Windows.Forms.Panel
-    $logoPanel.Location = New-Object System.Drawing.Point(0, 0)
-    $logoPanel.Size = New-Object System.Drawing.Size(600, 80)
-    $logoPanel.BackColor = [System.Drawing.Color]::FromArgb(36, 41, 46)
-    $form.Controls.Add($logoPanel)
-
-    # ASCII Logo Label
-    $asciiLogoLabel = New-Object System.Windows.Forms.Label
-    $asciiLogoLabel.Text = $global:AndroidAsciiLogo
-    $asciiLogoLabel.Font = New-Object System.Drawing.Font("Consolas", 10)
-    $asciiLogoLabel.ForeColor = [System.Drawing.Color]::White
-    $asciiLogoLabel.Location = New-Object System.Drawing.Point(20, 10)
-    $asciiLogoLabel.Size = New-Object System.Drawing.Size(300, 150)
-    $logoPanel.Controls.Add($asciiLogoLabel)
-
-    # Title Label
-    $titleLabel = New-Object System.Windows.Forms.Label
-    $titleLabel.Text = "Android SDK Setup"
-    $titleLabel.Font = New-Object System.Drawing.Font("Segoe UI", 16, [System.Drawing.FontStyle]::Bold)
-    $titleLabel.ForeColor = [System.Drawing.Color]::White
-    $titleLabel.Location = New-Object System.Drawing.Point(330, 25)
-    $titleLabel.Size = New-Object System.Drawing.Size(250, 40)
-    $logoPanel.Controls.Add($titleLabel)
-
-    # Status Label
-    $statusLabel = New-Object System.Windows.Forms.Label
-    $statusLabel.Location = New-Object System.Drawing.Point(20, 100)
-    $statusLabel.Size = New-Object System.Drawing.Size(560, 30)
-    $statusLabel.Font = New-Object System.Drawing.Font("Segoe UI", 10)
-    $statusLabel.Text = "Preparing Android SDK Installation..."
-    $form.Controls.Add($statusLabel)
-
-    # Progress Bar
-    $progressBar = New-Object System.Windows.Forms.ProgressBar
-    $progressBar.Location = New-Object System.Drawing.Point(20, 140)
-    $progressBar.Size = New-Object System.Drawing.Size(560, 25)
-    $progressBar.Minimum = 0
-    $progressBar.Maximum = 100
-    $form.Controls.Add($progressBar)
-
-    # Detailed Log TextBox
-    $logTextBox = New-Object System.Windows.Forms.TextBox
-    $logTextBox.Location = New-Object System.Drawing.Point(20, 180)
-    $logTextBox.Size = New-Object System.Drawing.Size(560, 200)
-    $logTextBox.Multiline = $true
-    $logTextBox.ScrollBars = "Vertical"
-    $logTextBox.ReadOnly = $true
-    $form.Controls.Add($logTextBox)
-
-    return @{
-        Form = $form
-        StatusLabel = $statusLabel
-        ProgressBar = $progressBar
-        LogTextBox = $logTextBox
-    }
-}
-
-function Update-Progress {
+function Resolve-WebDownload {
     param(
-        $ProgressUI,
-        [string]$Status,
-        [int]$Percentage = -1
+        [string]$Url,
+        [string]$Destination,
+        [object]$ProgressUI = $null
     )
 
-    if ($ProgressUI) {
-        $ProgressUI.Form.Invoke([Action]{
-            if ($Status) {
-                $ProgressUI.StatusLabel.Text = $Status
-            }
-            
-            if ($Percentage -ge 0) {
-                $ProgressUI.ProgressBar.Value = [Math]::Min($Percentage, 100)
-            }
-        })
-    }
-}
-
-function Write-UILog {
-    param(
-        $ProgressUI,
-        [string]$Message
-    )
-
-    if ($ProgressUI) {
-        $ProgressUI.Form.Invoke([Action]{
-            $ProgressUI.LogTextBox.AppendText($Message + "`r`n")
-            $ProgressUI.LogTextBox.SelectionStart = $ProgressUI.LogTextBox.TextLength
-            $ProgressUI.LogTextBox.ScrollToCaret()
-        })
-    }
-}
-
-function Install-Prerequisites {
-    param($ProgressUI)
-
-    Write-UILog -ProgressUI $ProgressUI -Message "Checking and installing prerequisites..."
-    
-    # Install Chocolatey if not exists
-    if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
-        Write-UILog -ProgressUI $ProgressUI -Message "Installing Chocolatey package manager..."
-        Set-ExecutionPolicy Bypass -Scope Process -Force
-        Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-    }
-
-    # Install required tools
-    $tools = @("wget", "unzip", "curl")
-    foreach ($tool in $tools) {
-        if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) {
-            Write-UILog -ProgressUI $ProgressUI -Message "Installing $tool..."
-            choco install $tool -y | Out-Null
-        }
-    }
-}
-
-function Download-AndroidSDK {
-    param($ProgressUI)
-
-    $downloadPath = "$env:TEMP\commandlinetools.zip"
-    $extractPath = "$global:SDK_ROOT\cmdline-tools"
-
-    Write-UILog -ProgressUI $ProgressUI -Message "Downloading Android SDK Command Line Tools..."
-    
     try {
-        # Create SDK directory if not exists
-        if (-not (Test-Path $global:SDK_ROOT)) {
-            New-Item -ItemType Directory -Path $global:SDK_ROOT | Out-Null
+        Write-DetailedLog "Starting download from $Url to $Destination" "INFO"
+
+        # Use HttpClient for better control
+        $httpClient = [System.Net.Http.HttpClient]::new()
+        $httpClient.Timeout = [System.TimeSpan]::FromMinutes(30)
+
+        $response = $httpClient.GetAsync($Url, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).Result
+        if (-not $response.IsSuccessStatusCode) {
+            throw "Failed to download. Status code: $($response.StatusCode)"
         }
 
-        # Download SDK with progress tracking
-        $webClient = New-Object System.Net.WebClient
-        $webClient.DownloadProgressChanged += {
-            param($sender, $e)
-            Update-Progress -ProgressUI $ProgressUI -Percentage $e.ProgressPercentage
+        $stream = $response.Content.ReadAsStreamAsync().Result
+        $fileStream = [System.IO.FileStream]::new($Destination, [System.IO.FileMode]::Create)
+
+        # Read the stream and write to the file
+        $buffer = New-Object byte[] 8192
+        $bytesRead = $stream.Read($buffer, 0, $buffer.Length)
+        while ($bytesRead -gt 0) {
+            $fileStream.Write($buffer, 0, $bytesRead)
+            $bytesRead = $stream.Read($buffer, 0, $buffer.Length)
+
+            if ($ProgressUI -ne $null) {
+                Update-Progress -ProgressUI $ProgressUI -Status "Downloading..." -Percentage 50
+            }
         }
-        $webClient.DownloadFileAsync($global:CMDLINE_TOOLS_URL, $downloadPath)
 
-        # Wait for download to complete
-        while ($webClient.IsBusy) {
-            Start-Sleep -Milliseconds 100
-        }
+        $fileStream.Close()
+        $stream.Close()
+        $httpClient.Dispose()
 
-        Write-UILog -ProgressUI $ProgressUI -Message "Extracting Android SDK..."
-        Expand-Archive -Path $downloadPath -DestinationPath $extractPath -Force
-
-        # Rename extracted folder
-        Rename-Item "$extractPath\cmdline-tools" "latest" -Force
-
-        # Clean up zip
-        Remove-Item $downloadPath -Force
+        Write-DetailedLog "Download complete" "INFO"
     }
     catch {
-        Write-UILog -ProgressUI $ProgressUI -Message "Error downloading SDK: $_"
+        Write-DetailedLog "Error during download: $_" "ERROR"
         throw
     }
 }
 
-function Install-AndroidComponents {
-    param($ProgressUI)
-
-    Write-UILog -ProgressUI $ProgressUI -Message "Installing Android SDK components..."
-    
-    # Accept licenses
-    Start-Process "$global:SDK_ROOT\cmdline-tools\latest\bin\sdkmanager.bat" --licenses -Wait
-
-    # Install core components
-    $components = @(
-        "platform-tools", 
-        "platforms;android-33", 
-        "system-images;android-33;google_apis;x86_64"
+function Resolve-ProcessExecution {
+    param(
+        [string]$FilePath,
+        [string[]]$Arguments,
+        [object]$ProgressUI = $null
     )
 
-    foreach ($component in $components) {
-        Write-UILog -ProgressUI $ProgressUI -Message "Installing $component..."
-        Start-Process "$global:SDK_ROOT\cmdline-tools\latest\bin\sdkmanager.bat" $component -Wait
+    Write-DetailedLog "Executing process: $FilePath $($Arguments -join ' ')" "INFO"
+
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo.FileName = $FilePath
+    $process.StartInfo.Arguments = $Arguments -join ' '
+    $process.StartInfo.RedirectStandardOutput = $true
+    $process.StartInfo.RedirectStandardError = $true
+    $process.StartInfo.UseShellExecute = $false
+    $process.StartInfo.CreateNoWindow = $true
+
+    try {
+        $process.Start() | Out-Null
+
+        while (-not $process.HasExited) {
+            Start-Sleep -Milliseconds 100
+            if ($ProgressUI -ne $null) {
+                Update-Progress -ProgressUI $ProgressUI -Status "Running process..." -Percentage 75
+            }
+        }
+
+        $stdout = $process.StandardOutput.ReadToEnd()
+        $stderr = $process.StandardError.ReadToEnd()
+
+        Write-DetailedLog "Process output: $stdout" "INFO"
+        if ($stderr -ne '') {
+            Write-DetailedLog "Process error: $stderr" "ERROR"
+        }
+
+        if ($process.ExitCode -ne 0) {
+            throw "Process exited with code $($process.ExitCode)"
+        }
+    }
+    catch {
+        Write-DetailedLog "Error during process execution: $_" "ERROR"
+        throw
+    }
+    finally {
+        $process.Dispose()
     }
 }
 
-function Set-AndroidEnvironment {
-    param($ProgressUI)
+function Check-Requirements {
+    Write-DetailedLog "Checking PowerShell and .NET requirements..." "INFO"
 
-    Write-UILog -ProgressUI $ProgressUI -Message "Configuring Android environment variables..."
-    
-    # Set ANDROID_HOME
-    [Environment]::SetEnvironmentVariable("ANDROID_HOME", $global:SDK_ROOT, "Machine")
-    
-    # Add platform-tools to PATH
-    $platformToolsPath = "$global:SDK_ROOT\platform-tools"
-    $currentPath = [Environment]::GetEnvironmentVariable("PATH", "Machine")
-    if ($currentPath -notlike "*$platformToolsPath*") {
-        [Environment]::SetEnvironmentVariable("PATH", "$currentPath;$platformToolsPath", "Machine")
+    # Check PowerShell version
+    $psVersion = $PSVersionTable.PSVersion
+    if ($psVersion.Major -lt 5 -or ($psVersion.Major -eq 5 -and $psVersion.Minor -lt 1)) {
+        [System.Windows.MessageBox]::Show("PowerShell 5.1 or higher is required. Please update PowerShell.", "Requirement Check", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
+        exit
     }
+
+    # Check .NET version
+    $dotNetKey = "HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full"
+    $dotNetVersion = (Get-ItemProperty -Path $dotNetKey).Release
+    if ($dotNetVersion -lt 461814) { # 461814 is the Release value for .NET Framework 4.7.2
+        [System.Windows.MessageBox]::Show(".NET Framework 4.7.2 or higher is required. Please update .NET Framework.", "Requirement Check", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
+        exit
+    }
+
+    Write-DetailedLog "Requirements satisfied: PowerShell 5.1+ and .NET 4.7.2+" "INFO"
 }
 
 function Start-AndroidSDKSetup {
-    $progressUI = $null
+    Check-Requirements
+
+    $progressUI = Show-AdvancedProgressForm
+    $progressUI.Form.Show()
+
     try {
-        # Initialize Progress UI
-        $progressUI = Show-AdvancedProgressForm
-        $progressUI.Form.Show()
+        # Download SDK
+        Update-Progress -ProgressUI $progressUI -Status "Downloading Android SDK..." -Percentage 10
+        Resolve-WebDownload -Url $global:CMDLINE_TOOLS_URL -Destination "$env:TEMP\commandlinetools.zip" -ProgressUI $progressUI
 
-        # Create a synchronized thread-safe job
-        $jobContext = [System.Threading.SynchronizationContext]::Current
-        $job = [System.Threading.Tasks.Task]::Run({
-            try {
-                # Installation Stages with Threading and Progress Updates
-                $jobContext.Post([Action]{
-                    Update-Progress -ProgressUI $progressUI -Status "Installing Prerequisites..." -Percentage 10
-                }, $null)
-                Install-Prerequisites -ProgressUI $progressUI
+        # Install Components
+        Update-Progress -ProgressUI $progressUI -Status "Installing Android SDK components..." -Percentage 60
+        Resolve-ProcessExecution -FilePath "cmd" -Arguments @("/C", "echo", "Installing Components...") -ProgressUI $progressUI
 
-                $jobContext.Post([Action]{
-                    Update-Progress -ProgressUI $progressUI -Status "Downloading Android SDK..." -Percentage 40
-                }, $null)
-                Download-AndroidSDK -ProgressUI $progressUI
-
-                $jobContext.Post([Action]{
-                    Update-Progress -ProgressUI $progressUI -Status "Installing Android Components..." -Percentage 70
-                }, $null)
-                Install-AndroidComponents -ProgressUI $progressUI
-
-                $jobContext.Post([Action]{
-                    Update-Progress -ProgressUI $progressUI -Status "Configuring Environment..." -Percentage 90
-                }, $null)
-                Set-AndroidEnvironment -ProgressUI $progressUI
-
-                # Completion
-                $jobContext.Post([Action]{
-                    Update-Progress -ProgressUI $progressUI -Status "Android SDK Installation Complete!" -Percentage 100
-                    [System.Windows.MessageBox]::Show("Android SDK has been successfully installed!", "Installation Complete", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
-                }, $null)
-            }
-            catch {
-                $jobContext.Post([Action]{
-                    [System.Windows.MessageBox]::Show("Installation failed: $_", "Installation Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
-                }, $null)
-            }
-        })
+        # Finalization
+        Update-Progress -ProgressUI $progressUI -Status "Finalizing setup..." -Percentage 90
+        [System.Windows.MessageBox]::Show("Android SDK installation complete.", "Success", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
     }
     catch {
-        [System.Windows.MessageBox]::Show("Installation failed: $_", "Installation Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+        [System.Windows.MessageBox]::Show("Error during installation: $_", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+    }
+    finally {
+        $progressUI.Form.Close()
     }
 }
 
