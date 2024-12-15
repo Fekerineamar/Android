@@ -5,28 +5,15 @@
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName PresentationFramework
-Add-Type -AssemblyName System.Threading
 Add-Type -AssemblyName System.Net.Http
+Add-Type -AssemblyName System.Threading
 
-# Logging and Configuration
+# Global Configurations
 $global:LogFile = "$env:TEMP\AndroidSDKSetup.log"
 $global:SDK_ROOT = "$env:USERPROFILE\Android\Sdk"
 $global:CMDLINE_TOOLS_URL = "https://dl.google.com/android/repository/commandlinetools-win-11076708_latest.zip"
 
-# ASCII Art Logo
-$global:AndroidAsciiLogo = @"
-    /\__/\   Android SDK
-   /`    '\  Setup Wizard
-  === 0  0 ===
-  \  --   --  /
-  /        \ 
- /          \
-|            |
- \  ||  ||  /
-  \_oo__oo_/#
-"@
-
-# Helper: Write Logs
+# Helper: Log Messages
 function Write-DetailedLog {
     param(
         [string]$Message,
@@ -38,7 +25,7 @@ function Write-DetailedLog {
     Write-Host $logEntry
 }
 
-# Helper: Create Progress Form
+# Create Progress Form
 function Show-AdvancedProgressForm {
     $form = New-Object System.Windows.Forms.Form
     $form.Text = "Android SDK Setup Wizard - by cody4code"
@@ -46,32 +33,7 @@ function Show-AdvancedProgressForm {
     $form.StartPosition = "CenterScreen"
     $form.BackColor = [System.Drawing.Color]::White
 
-    # Logo Panel
-    $logoPanel = New-Object System.Windows.Forms.Panel
-    $logoPanel.Location = New-Object System.Drawing.Point(0, 0)
-    $logoPanel.Size = New-Object System.Drawing.Size(600, 80)
-    $logoPanel.BackColor = [System.Drawing.Color]::FromArgb(36, 41, 46)
-    $form.Controls.Add($logoPanel)
-
-    # ASCII Logo Label
-    $asciiLogoLabel = New-Object System.Windows.Forms.Label
-    $asciiLogoLabel.Text = $global:AndroidAsciiLogo
-    $asciiLogoLabel.Font = New-Object System.Drawing.Font("Consolas", 10)
-    $asciiLogoLabel.ForeColor = [System.Drawing.Color]::White
-    $asciiLogoLabel.Location = New-Object System.Drawing.Point(20, 10)
-    $asciiLogoLabel.Size = New-Object System.Drawing.Size(300, 150)
-    $logoPanel.Controls.Add($asciiLogoLabel)
-
-    # Title Label
-    $titleLabel = New-Object System.Windows.Forms.Label
-    $titleLabel.Text = "Android SDK Setup"
-    $titleLabel.Font = New-Object System.Drawing.Font("Segoe UI", 16, [System.Drawing.FontStyle]::Bold)
-    $titleLabel.ForeColor = [System.Drawing.Color]::White
-    $titleLabel.Location = New-Object System.Drawing.Point(330, 25)
-    $titleLabel.Size = New-Object System.Drawing.Size(250, 40)
-    $logoPanel.Controls.Add($titleLabel)
-
-    # Status Label
+    # Progress Components
     $statusLabel = New-Object System.Windows.Forms.Label
     $statusLabel.Location = New-Object System.Drawing.Point(20, 100)
     $statusLabel.Size = New-Object System.Drawing.Size(560, 30)
@@ -79,7 +41,6 @@ function Show-AdvancedProgressForm {
     $statusLabel.Text = "Preparing Android SDK Installation..."
     $form.Controls.Add($statusLabel)
 
-    # Progress Bar
     $progressBar = New-Object System.Windows.Forms.ProgressBar
     $progressBar.Location = New-Object System.Drawing.Point(20, 140)
     $progressBar.Size = New-Object System.Drawing.Size(560, 25)
@@ -87,7 +48,6 @@ function Show-AdvancedProgressForm {
     $progressBar.Maximum = 100
     $form.Controls.Add($progressBar)
 
-    # Detailed Log TextBox
     $logTextBox = New-Object System.Windows.Forms.TextBox
     $logTextBox.Location = New-Object System.Drawing.Point(20, 180)
     $logTextBox.Size = New-Object System.Drawing.Size(560, 200)
@@ -96,7 +56,6 @@ function Show-AdvancedProgressForm {
     $logTextBox.ReadOnly = $true
     $form.Controls.Add($logTextBox)
 
-    # Return UI components as hash table
     return @{
         Form = $form
         StatusLabel = $statusLabel
@@ -105,37 +64,47 @@ function Show-AdvancedProgressForm {
     }
 }
 
-# Update Progress Helper
+# Update Progress
 function Update-Progress {
     param(
         $ProgressUI,
         [string]$Status,
-        [int]$Percentage = -1
+        [int]$Percentage
     )
 
-    if ($ProgressUI) {
-        $ProgressUI.Form.Invoke([Action]{
-            if ($Status) {
-                $ProgressUI.StatusLabel.Text = $Status
-            }
-            if ($Percentage -ge 0) {
-                $ProgressUI.ProgressBar.Value = [Math]::Min($Percentage, 100)
-            }
-        })
-    }
+    $ProgressUI.Form.Invoke([Action]{
+        $ProgressUI.StatusLabel.Text = $Status
+        $ProgressUI.ProgressBar.Value = $Percentage
+    })
 }
 
-# Download with Overload Handling
+# Append Logs to UI
+function Write-UILog {
+    param(
+        $ProgressUI,
+        [string]$Message
+    )
+
+    $ProgressUI.Form.Invoke([Action]{
+        $ProgressUI.LogTextBox.AppendText($Message + "`r`n")
+        $ProgressUI.LogTextBox.SelectionStart = $ProgressUI.LogTextBox.Text.Length
+        $ProgressUI.LogTextBox.ScrollToCaret()
+    })
+}
+
+# Download File
 function Resolve-WebDownload {
     param(
         [string]$Url,
-        [string]$Destination
+        [string]$Destination,
+        [object]$ProgressUI
     )
 
     try {
-        Write-DetailedLog "Downloading $Url..."
+        Write-UILog -ProgressUI $ProgressUI -Message "Downloading $Url..."
+        Write-DetailedLog "Starting download from $Url"
+
         $httpClient = [System.Net.Http.HttpClient]::new()
-        $httpClient.Timeout = [System.TimeSpan]::FromMinutes(30)
         $response = $httpClient.GetAsync($Url, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).Result
 
         if (-not $response.IsSuccessStatusCode) {
@@ -153,40 +122,54 @@ function Resolve-WebDownload {
         $fileStream.Close()
         $stream.Close()
         $httpClient.Dispose()
+
+        Write-UILog -ProgressUI $ProgressUI -Message "Download complete: $Destination"
+        Write-DetailedLog "Download complete"
     }
     catch {
-        Write-DetailedLog "Download failed: $_" "ERROR"
+        Write-DetailedLog "Download error: $_" "ERROR"
         throw
     }
 }
 
-# Main Execution Function
+# Main Setup Function
 function Start-AndroidSDKSetup {
     $progressUI = Show-AdvancedProgressForm
+    $jobContext = [System.Threading.SynchronizationContext]::Current
+
+    # Display UI
+    $null = [System.Threading.Tasks.Task]::Run({
+        try {
+            $jobContext.Post([Action]{
+                Update-Progress -ProgressUI $progressUI -Status "Downloading SDK..." -Percentage 20
+            }, $null)
+
+            # Download Command Line Tools
+            Resolve-WebDownload -Url $global:CMDLINE_TOOLS_URL -Destination "$env:TEMP\commandlinetools.zip" -ProgressUI $progressUI
+
+            $jobContext.Post([Action]{
+                Update-Progress -ProgressUI $progressUI -Status "Installing SDK Components..." -Percentage 60
+            }, $null)
+
+            Start-Sleep -Seconds 3 # Simulated install step
+
+            $jobContext.Post([Action]{
+                Update-Progress -ProgressUI $progressUI -Status "Finalizing Setup..." -Percentage 100
+            }, $null)
+
+            Write-UILog -ProgressUI $progressUI -Message "Android SDK setup completed successfully!"
+        }
+        catch {
+            $jobContext.Post([Action]{
+                Write-UILog -ProgressUI $progressUI -Message "An error occurred: $_"
+                [System.Windows.MessageBox]::Show("Error: $_", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+            }, $null)
+        }
+    })
+
     $progressUI.Form.ShowDialog()
-
-    try {
-        # Step 1: Download Command Line Tools
-        Update-Progress -ProgressUI $progressUI -Status "Downloading Command Line Tools..." -Percentage 20
-        Resolve-WebDownload -Url $global:CMDLINE_TOOLS_URL -Destination "$env:TEMP\commandlinetools.zip"
-
-        # Step 2: Install SDK Components
-        Update-Progress -ProgressUI $progressUI -Status "Installing SDK Components..." -Percentage 60
-        # Simulate Installation
-        Start-Sleep -Seconds 3
-
-        # Step 3: Finalize Setup
-        Update-Progress -ProgressUI $progressUI -Status "Finalizing Setup..." -Percentage 100
-        Write-DetailedLog "Android SDK Setup Complete!"
-    }
-    catch {
-        [System.Windows.MessageBox]::Show("An error occurred: $_", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
-    }
-    finally {
-        $progressUI.Form.Close()
-    }
 }
 
-# Ensure Visual Styles and Run Setup
+# Main Execution
 [System.Windows.Forms.Application]::EnableVisualStyles()
 Start-AndroidSDKSetup
